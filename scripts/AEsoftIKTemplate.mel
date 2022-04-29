@@ -1,0 +1,31 @@
+global proc AESoftIKTemplate(string $nodeName)
+{
+    
+    editorTemplate -beginScrollLayout;
+        
+        editorTemplate -beginLayout "Soft-IK Attributes" -collapse false;
+			
+			editorTemplate -addControl "envelope";
+            editorTemplate -addControl "softDistance";
+            editorTemplate -addControl "chainLength";
+        
+        editorTemplate -endLayout;
+        
+		editorTemplate -beginLayout "Output" -collapse false;
+        
+            editorTemplate -addControl "outputTranslate";
+            editorTemplate -addControl "softScale";
+			editorTemplate -addControl "distance";
+        
+        editorTemplate -endLayout;
+		
+		editorTemplate -suppress "startMatrix";
+		editorTemplate -suppress "endMatrix";
+		editorTemplate -suppress "parentInverseMatrix";
+		
+        AEdependNodeTemplate $nodeName;
+        editorTemplate -addExtraControls;
+        
+    editorTemplate -endScrollLayout;
+    
+}
