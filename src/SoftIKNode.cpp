@@ -1,14 +1,12 @@
 //
 // File: SoftIKNode.cpp
 //
-// Dependency Graph Node: SoftIK
+// Dependency Graph Node: softIK
 //
 // Author: Benjamin H. Singleton
 //
 
 #include "SoftIKNode.h"
-
-#define e	2.7182818284590452353602874713527f		
 
 MObject		SoftIK::envelope;
 MObject		SoftIK::startMatrix;
@@ -24,8 +22,10 @@ MObject		SoftIK::outputTranslateZ;
 MObject		SoftIK::softScale;
 MObject		SoftIK::distance;
 
-MTypeId		SoftIK::id(0x0013b1c4);
+MString		SoftIK::inputCategory("Input");
 MString		SoftIK::outputCategory("Output");
+
+MTypeId		SoftIK::id(0x0013b1c4);
 
 
 SoftIK::SoftIK() {}
@@ -56,7 +56,9 @@ Only these values should be used when performing computations!
 	MFnAttribute fnAttribute(attribute, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	if (fnAttribute.hasCategory(SoftIK::outputCategory))
+	bool isOutput = fnAttribute.hasCategory(SoftIK::outputCategory);
+
+	if (isOutput)
 	{
 		
 		// Get input data handles
@@ -119,7 +121,7 @@ Only these values should be used when performing computations!
 		} else if (a <= distance) 
 		{
 				
-			y = ((softDistance * (1.0 - pow(e, (-(distance - a) / softDistance)))) + a);
+			y = ((softDistance * (1.0 - pow(DBL_EPSILON, (-(distance - a) / softDistance)))) + a);
 
 		}
 		else;
@@ -175,9 +177,12 @@ Only these values should be used when performing computations!
 		return MS::kSuccess;
 
 	}
-	else;
+	else
+	{
 
-	return MS::kUnknownParameter;
+		return MS::kUnknownParameter;
+
+	}
 
 };
 
@@ -222,31 +227,42 @@ Use this function to define any static attributes.
 
 	CHECK_MSTATUS(fnNumericAttr.setMin(0.0));
 	CHECK_MSTATUS(fnNumericAttr.setMin(1.0));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
 
 	// ".startMatrix" attribute
 	//
 	SoftIK::startMatrix = fnMatrixAttr.create("startMatrix", "sm", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
+
 	// ".endMatrix" attribute
 	//
 	SoftIK::endMatrix = fnMatrixAttr.create("endMatrix", "em", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
 
 	// ".softDistance" attribute
 	//
 	SoftIK::softDistance = fnNumericAttr.create("softDistance", "sd", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
+
 	// ".chainLength" attribute
 	//
 	SoftIK::chainLength = fnNumericAttr.create("chainLength", "cl", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
+
 	// ".parentInverseMatrix" attribute
 	//
 	SoftIK::parentInverseMatrix = fnMatrixAttr.create("parentInverseMatrix", "pim", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
 
 	// Output attributes:
 	// ".outputTranslateX" attribute

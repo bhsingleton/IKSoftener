@@ -1,9 +1,10 @@
-#ifndef _SoftIKNode
-#define _SoftIKNode
+#ifndef _SOFT_IK_NODE
+#define _SOFT_IK_NODE
+#define _USE_MATH_DEFINES
 //
 // File: SoftIKNode.h
 //
-// Dependency Graph Node: SoftIK
+// Dependency Graph Node: softIK
 //
 // Author: Benjamin H. Singleton
 //
@@ -56,8 +57,10 @@ public:
 	static	MObject		softScale;
 	static	MObject		distance;
 
-	static	MTypeId		id;
+	static	MString		inputCategory;
 	static	MString		outputCategory;
+
+	static	MTypeId		id;
 
 };
 
