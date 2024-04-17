@@ -6,33 +6,39 @@
 // Author: Benjamin H. Singleton
 //
 
-#include "SoftIKNode.h"
+#include "IKSoftenerNode.h"
 
-MObject		SoftIK::envelope;
-MObject		SoftIK::startMatrix;
-MObject		SoftIK::endMatrix;
-MObject		SoftIK::softDistance;
-MObject		SoftIK::chainLength;
-MObject		SoftIK::parentInverseMatrix;
+MObject		IKSoftener::envelope;
+MObject		IKSoftener::startMatrix;
+MObject		IKSoftener::endMatrix;
+MObject		IKSoftener::radius;
+MObject		IKSoftener::chainLength;
+MObject		IKSoftener::parentInverseMatrix;
 
-MObject		SoftIK::outputTranslate;
-MObject		SoftIK::outputTranslateX;
-MObject		SoftIK::outputTranslateY;
-MObject		SoftIK::outputTranslateZ;
-MObject		SoftIK::softScale;
-MObject		SoftIK::distance;
+MObject		IKSoftener::outTranslate;
+MObject		IKSoftener::outTranslateX;
+MObject		IKSoftener::outTranslateY;
+MObject		IKSoftener::outTranslateZ;
+MObject		IKSoftener::outVector;
+MObject		IKSoftener::outVectorX;
+MObject		IKSoftener::outVectorY;
+MObject		IKSoftener::outVectorZ;
+MObject		IKSoftener::outMatrix;
+MObject		IKSoftener::outWorldMatrix;
+MObject		IKSoftener::softScale;
+MObject		IKSoftener::softDistance;
 
-MString		SoftIK::inputCategory("Input");
-MString		SoftIK::outputCategory("Output");
+MString		IKSoftener::inputCategory("Input");
+MString		IKSoftener::outputCategory("Output");
 
-MTypeId		SoftIK::id(0x0013b1c4);
-
-
-SoftIK::SoftIK() {}
-SoftIK::~SoftIK() {}
+MTypeId		IKSoftener::id(0x0013b1c4);
 
 
-MStatus SoftIK::compute(const MPlug& plug, MDataBlock& data) 
+IKSoftener::IKSoftener() {}
+IKSoftener::~IKSoftener() {}
+
+
+MStatus IKSoftener::compute(const MPlug& plug, MDataBlock& data)
 /**
 This method should be overridden in user defined nodes.
 Recompute the given output based on the nodes inputs.
@@ -56,29 +62,29 @@ Only these values should be used when performing computations!
 	MFnAttribute fnAttribute(attribute, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	bool isOutput = fnAttribute.hasCategory(SoftIK::outputCategory);
+	bool isOutput = fnAttribute.hasCategory(IKSoftener::outputCategory);
 
 	if (isOutput)
 	{
 		
 		// Get input data handles
 		//
-		MDataHandle envelopeHandle = data.inputValue(SoftIK::envelope, &status);
+		MDataHandle envelopeHandle = data.inputValue(IKSoftener::envelope, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle startMatrixHandle = data.inputValue(SoftIK::startMatrix, &status);
+		MDataHandle startMatrixHandle = data.inputValue(IKSoftener::startMatrix, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle endMatrixHandle = data.inputValue(SoftIK::endMatrix, &status);
+		MDataHandle endMatrixHandle = data.inputValue(IKSoftener::endMatrix, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle softDistanceHandle = data.inputValue(SoftIK::softDistance, &status);
+		MDataHandle radiusHandle = data.inputValue(IKSoftener::radius, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle chainLengthHandle = data.inputValue(SoftIK::chainLength, &status);
+		MDataHandle chainLengthHandle = data.inputValue(IKSoftener::chainLength, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle parentInverseMatrixHandle = data.inputValue(SoftIK::parentInverseMatrix, &status);
+		MDataHandle parentInverseMatrixHandle = data.inputValue(IKSoftener::parentInverseMatrix, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
 		// Get values from handles
@@ -89,85 +95,115 @@ Only these values should be used when performing computations!
 		MMatrix endMatrix = endMatrixHandle.asMatrix();
 		MMatrix parentInverseMatrix = parentInverseMatrixHandle.asMatrix();
 
-		double softDistance = softDistanceHandle.asDouble();
-		double chainLength = fabs(chainLengthHandle.asDouble());
-
-		if (softDistance <= 0.0)
+		double radius = std::fabs(radiusHandle.asDouble());
+		double chainLength = std::fabs(chainLengthHandle.asDouble());
+		
+		if (radius == 0.0)
 		{
 
-			softDistance = DBL_MIN;
+			radius = DBL_MIN;
 
 		}
 		
 		// Calculate aim vector
 		//
-		MPoint startPoint = MPoint(startMatrix[3]);
-		MPoint endPoint = MPoint(endMatrix[3]);
+		MPoint startPoint = IKSoftener::matrixToPosition(startMatrix) * parentInverseMatrix;
+		MPoint endPoint = IKSoftener::matrixToPosition(endMatrix) * parentInverseMatrix;
 
 		MVector aimVector = MVector(endPoint - startPoint);
 		double distance = aimVector.length();
 
-		// Compute soft value
+		//Calculate soft distance
 		// http://www.softimageblog.com/archives/108
 		//
-		double a = (chainLength - softDistance);
-		double y = 0.0;
+		const double a = (chainLength - radius);
+		const double e = std::exp(1.0);
+
+		double softDistance = 0.0;
 
 		if (0.0 <= distance && distance < a) 
 		{
 
-			y = distance;
+			softDistance = distance;
 
 		} else if (a <= distance) 
 		{
 				
-			y = ((softDistance * (1.0 - pow(DBL_EPSILON, (-(distance - a) / softDistance)))) + a);
+			softDistance = ((radius * (1.0 - std::pow(e, (-(distance - a) / radius)))) + a);
 
 		}
 		else;
 
-		double softOffset = distance - y;
-		double softScale = distance / y;
-
-		// Calculate point in parent space
+		double softScale = (softDistance > 0.0) ? (distance / softDistance) : 0.0;
+		
+		// Calculate soft end point
 		//
 		MVector forwardVector = aimVector.normal();
-		MPoint softEndPoint = (endPoint + (forwardVector * -softOffset)) * parentInverseMatrix;
+		MPoint softEndPoint = startPoint + (forwardVector * softDistance);
 
-		MPoint point = (MPoint::origin * (1.0 - envelope)) + (softEndPoint * envelope); // Lerp the two points using the envelope
+		MPoint point = (endPoint * (1.0 - envelope)) + (softEndPoint * envelope); // Lerp the two points using the envelope
+
+		MMatrix matrix = IKSoftener::createPositionMatrix(point);
+		MMatrix worldMatrix = matrix * parentInverseMatrix.inverse();
 
 		// Get output data handles
 		//
-		MDataHandle outputTranslateXHandle = data.outputValue(SoftIK::outputTranslateX, &status);
+		MDataHandle outTranslateHandle = data.outputValue(IKSoftener::outTranslate, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle outputTranslateYHandle = data.outputValue(SoftIK::outputTranslateY, &status);
+		MDataHandle outTranslateXHandle = outTranslateHandle.child(IKSoftener::outTranslateX);
+		MDataHandle outTranslateYHandle = outTranslateHandle.child(IKSoftener::outTranslateY);
+		MDataHandle outTranslateZHandle = outTranslateHandle.child(IKSoftener::outTranslateZ);
+
+		MDataHandle outVectorHandle = data.outputValue(IKSoftener::outVector, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle outputTranslateZHandle = data.outputValue(SoftIK::outputTranslateZ, &status);
+		MDataHandle outVectorXHandle = outVectorHandle.child(IKSoftener::outVectorX);
+		MDataHandle outVectorYHandle = outVectorHandle.child(IKSoftener::outVectorY);
+		MDataHandle outVectorZHandle = outVectorHandle.child(IKSoftener::outVectorZ);
+
+		MDataHandle softScaleHandle = data.outputValue(IKSoftener::softScale, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle softScaleHandle = data.outputValue(SoftIK::softScale, &status);
+		MDataHandle softDistanceHandle = data.outputValue(IKSoftener::softDistance, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle distanceHandle = data.outputValue(SoftIK::distance, &status);
+		MDataHandle outMatrixHandle = data.outputValue(IKSoftener::outMatrix, &status);
+		CHECK_MSTATUS_AND_RETURN_IT(status);
+
+		MDataHandle outWorldMatrixHandle = data.outputValue(IKSoftener::outWorldMatrix, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
 		// Set output handle values
 		//
-		outputTranslateXHandle.setDouble(point.x);
-		outputTranslateYHandle.setDouble(point.y);
-		outputTranslateZHandle.setDouble(point.z);
+		MDistance::Unit distanceUnit = MDistance::uiUnit();
+		outTranslateXHandle.setMDistance(MDistance(point.x, distanceUnit));
+		outTranslateYHandle.setMDistance(MDistance(point.y, distanceUnit));
+		outTranslateZHandle.setMDistance(MDistance(point.z, distanceUnit));
 
-		outputTranslateXHandle.setClean();
-		outputTranslateYHandle.setClean();
-		outputTranslateZHandle.setClean();
+		outTranslateXHandle.setClean();
+		outTranslateYHandle.setClean();
+		outTranslateZHandle.setClean();
+
+		outVectorXHandle.setDouble(forwardVector.x);
+		outVectorYHandle.setDouble(forwardVector.y);
+		outVectorZHandle.setDouble(forwardVector.z);
+
+		outVectorXHandle.setClean();
+		outVectorYHandle.setClean();
+		outVectorZHandle.setClean();
 
 		softScaleHandle.setDouble(softScale);
 		softScaleHandle.setClean();
-		
-		distanceHandle.setDouble(distance);
-		distanceHandle.setClean();
+
+		softDistanceHandle.setDouble(distance);
+		softDistanceHandle.setClean();
+
+		outMatrixHandle.setMMatrix(matrix);
+		outMatrixHandle.setClean();
+
+		outWorldMatrixHandle.setMMatrix(worldMatrix);
+		outWorldMatrixHandle.setClean();
 
 		// Mark plug as clean
 		//
@@ -187,7 +223,42 @@ Only these values should be used when performing computations!
 };
 
 
-void* SoftIK::creator() 
+MMatrix IKSoftener::createPositionMatrix(const MPoint& position)
+/**
+Returns a position matrix from the supplied vector.
+
+@param position: The vector to convert.
+@return: The new position matrix.
+*/
+{
+
+	double rows[4][4] = {
+	{ 1.0, 0.0, 0.0, 0.0 },
+	{ 0.0, 1.0, 0.0, 0.0 },
+	{ 0.0, 0.0, 1.0, 0.0 },
+	{ position.x, position.y, position.z, 1.0 },
+	};
+
+	return MMatrix(rows);
+
+};
+
+
+MPoint IKSoftener::matrixToPosition(const MMatrix& matrix)
+/**
+Extracts the position component from the supplied transform matrix.
+
+@param matrix: The transform matrix to extract from.
+@return: The position value.
+*/
+{
+
+	return MPoint(matrix[3]);
+
+};
+
+
+void* IKSoftener::creator() 
 /**
 This function is called by Maya when a new instance is requested.
 See pluginMain.cpp for details.
@@ -196,12 +267,12 @@ See pluginMain.cpp for details.
 */
 {
 
-	return new SoftIK();
+	return new IKSoftener();
 
 };
 
 
-MStatus SoftIK::initialize()
+MStatus IKSoftener::initialize()
 /**
 This function is called by Maya after a plugin has been loaded.
 Use this function to define any static attributes.
@@ -222,138 +293,195 @@ Use this function to define any static attributes.
 	// Input attributes:
 	// ".envelope" attribute
 	//
-	SoftIK::envelope = fnNumericAttr.create("envelope", "env", MFnNumericData::kDouble, 1.0, &status);
+	IKSoftener::envelope = fnNumericAttr.create("envelope", "env", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setMin(0.0));
-	CHECK_MSTATUS(fnNumericAttr.setMin(1.0));
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnNumericAttr.setMax(1.0));
+	CHECK_MSTATUS(fnNumericAttr.setSoftMin(0.0));
+	CHECK_MSTATUS(fnNumericAttr.setSoftMax(1.0));
+	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
 	// ".startMatrix" attribute
 	//
-	SoftIK::startMatrix = fnMatrixAttr.create("startMatrix", "sm", MFnMatrixAttribute::kDouble, &status);
+	IKSoftener::startMatrix = fnMatrixAttr.create("startMatrix", "sm", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
 	// ".endMatrix" attribute
 	//
-	SoftIK::endMatrix = fnMatrixAttr.create("endMatrix", "em", MFnMatrixAttribute::kDouble, &status);
+	IKSoftener::endMatrix = fnMatrixAttr.create("endMatrix", "em", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".softDistance" attribute
+	// ".radius" attribute
 	//
-	SoftIK::softDistance = fnNumericAttr.create("softDistance", "sd", MFnNumericData::kDouble, 0.0, &status);
+	IKSoftener::radius = fnNumericAttr.create("radius", "rad", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnNumericAttr.setMin(0.0));
+	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
 	// ".chainLength" attribute
 	//
-	SoftIK::chainLength = fnNumericAttr.create("chainLength", "cl", MFnNumericData::kDouble, 0.0, &status);
+	IKSoftener::chainLength = fnNumericAttr.create("chainLength", "cl", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnNumericAttr.setMin(0.0));
+	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
 	// ".parentInverseMatrix" attribute
 	//
-	SoftIK::parentInverseMatrix = fnMatrixAttr.create("parentInverseMatrix", "pim", MFnMatrixAttribute::kDouble, &status);
+	IKSoftener::parentInverseMatrix = fnMatrixAttr.create("parentInverseMatrix", "pim", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
-	CHECK_MSTATUS(fnMatrixAttr.addToCategory(SoftIK::inputCategory));
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
 	// Output attributes:
-	// ".outputTranslateX" attribute
+	// ".outTranslateX" attribute
 	//
-	SoftIK::outputTranslateX = fnUnitAttr.create("outputTranslateX", "otx", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outTranslateX = fnUnitAttr.create("outTranslateX", "otx", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	CHECK_MSTATUS(fnUnitAttr.addToCategory(SoftIK::outputCategory));
-
-	// ".outputTranslateY" attribute
+	// ".outTranslateY" attribute
 	//
-	SoftIK::outputTranslateY = fnUnitAttr.create("outputTranslateY", "oty", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outTranslateY = fnUnitAttr.create("outTranslateY", "oty", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	CHECK_MSTATUS(fnUnitAttr.addToCategory(SoftIK::outputCategory));
-
-	// ".outputTranslateZ" attribute
+	// ".outTranslateZ" attribute
 	//
-	SoftIK::outputTranslateZ = fnUnitAttr.create("outputTranslateZ", "otz", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outTranslateZ = fnUnitAttr.create("outTranslateZ", "otz", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	CHECK_MSTATUS(fnUnitAttr.addToCategory(SoftIK::outputCategory));
-
-	// ".outputTranslate" attribute
+	// ".outTranslate" attribute
 	//
-	SoftIK::outputTranslate = fnNumericAttr.create("outputTranslate", "ot", SoftIK::outputTranslateX, SoftIK::outputTranslateY, SoftIK::outputTranslateZ, &status);
+	IKSoftener::outTranslate = fnNumericAttr.create("outTranslate", "ot", IKSoftener::outTranslateX, IKSoftener::outTranslateY, IKSoftener::outTranslateZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::outputCategory));
+	// ".outVectorX" attribute
+	//
+	IKSoftener::outVectorX = fnNumericAttr.create("outVectorX", "ovx", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outVectorY" attribute
+	//
+	IKSoftener::outVectorY = fnNumericAttr.create("outVectorY", "ovy", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outVectorZ" attribute
+	//
+	IKSoftener::outVectorZ = fnNumericAttr.create("outVectorZ", "ovz", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outVector" attribute
+	//
+	IKSoftener::outVector = fnNumericAttr.create("outVector", "ov", IKSoftener::outVectorX, IKSoftener::outVectorY, IKSoftener::outVectorZ, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outMatrix" attribute
+	//
+	IKSoftener::outMatrix = fnMatrixAttr.create("outMatrix", "om", MFnMatrixAttribute::kDouble, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnMatrixAttr.setWritable(false));
+	CHECK_MSTATUS(fnMatrixAttr.setStorable(false));
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldMatrix" attribute
+	//
+	IKSoftener::outWorldMatrix = fnMatrixAttr.create("outWorldMatrix", "owm", MFnMatrixAttribute::kDouble, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnMatrixAttr.setWritable(false));
+	CHECK_MSTATUS(fnMatrixAttr.setStorable(false));
+	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::outputCategory));
 
 	// ".softScale" attribute
 	//
-	SoftIK::softScale = fnNumericAttr.create("softScale", "ss", MFnNumericData::kDouble, 1.0, &status);
+	IKSoftener::softScale = fnNumericAttr.create("softScale", "ss", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
-
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::outputCategory));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
 	// ".distance" attribute
 	//
-	SoftIK::distance = fnNumericAttr.create("distance", "d", MFnNumericData::kDouble, 1.0, &status);
+	IKSoftener::softDistance = fnNumericAttr.create("softDistance", "sd", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
-
-	CHECK_MSTATUS(fnNumericAttr.addToCategory(SoftIK::outputCategory));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
 	// Add attributes to node
 	//
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::envelope));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::startMatrix));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::endMatrix));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::softDistance));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::chainLength));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::parentInverseMatrix));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::envelope));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::startMatrix));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::endMatrix));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::radius));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::chainLength));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::parentInverseMatrix));
 
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::softScale));
-	CHECK_MSTATUS(SoftIK::addAttribute(SoftIK::distance));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outTranslate));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outVector));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outMatrix));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outWorldMatrix));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::softScale));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::softDistance));
 
 	// Define attribute relationships
 	//
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::envelope, SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::startMatrix, SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::endMatrix, SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::softDistance, SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::chainLength, SoftIK::outputTranslate));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::parentInverseMatrix, SoftIK::outputTranslate));
+	MObject attributes[6] = { IKSoftener::outTranslate , IKSoftener::outVector , IKSoftener::outMatrix , IKSoftener::outWorldMatrix , IKSoftener::softDistance , IKSoftener::softScale };
+	
+	for (MObject attribute : attributes)
+	{
 
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::startMatrix, SoftIK::softScale));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::endMatrix, SoftIK::softScale));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::softDistance, SoftIK::softScale));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::chainLength, SoftIK::softScale));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::envelope, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::startMatrix, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::endMatrix, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::radius, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::chainLength, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::parentInverseMatrix, attribute));
 
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::startMatrix, SoftIK::distance));
-	CHECK_MSTATUS(SoftIK::attributeAffects(SoftIK::endMatrix, SoftIK::distance));
+	}
 
 	return status;
 

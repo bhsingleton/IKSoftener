@@ -1,10 +1,9 @@
-#ifndef _SOFT_IK_NODE
-#define _SOFT_IK_NODE
-#define _USE_MATH_DEFINES
+#ifndef _IK_SOFTENER_NODE
+#define _IK_SOFTENER_NODE
 //
-// File: SoftIKNode.h
+// File: IKSoftenerNode.h
 //
-// Dependency Graph Node: softIK
+// Dependency Graph Node: ikSoftener
 //
 // Author: Benjamin H. Singleton
 //
@@ -19,6 +18,7 @@
 #include <maya/MVector.h>
 #include <maya/MMatrix.h>
 #include <maya/MString.h>
+#include <maya/MDistance.h>
 #include <maya/MFnNumericAttribute.h>
 #include <maya/MFnUnitAttribute.h>
 #include <maya/MFnMatrixAttribute.h>
@@ -27,16 +27,22 @@
 #include <maya/MTypeId.h> 
 #include <maya/MGlobal.h>
 
+#include <iostream>
+#include <cmath>
+
  
-class SoftIK : public MPxNode
+class IKSoftener : public MPxNode
 {
 
 public:
 
-						SoftIK();
-	virtual				~SoftIK();
+						IKSoftener();
+	virtual				~IKSoftener();
 
 	virtual MStatus		compute(const MPlug& plug, MDataBlock& data);
+
+	static	MMatrix		createPositionMatrix(const MPoint& position);
+	static	MPoint		matrixToPosition(const MMatrix& matrix);
 
 	static  void*		creator();
 	static  MStatus		initialize();
@@ -46,16 +52,22 @@ public:
 	static	MObject		envelope;
 	static	MObject		startMatrix;
 	static	MObject		endMatrix;
-	static	MObject		softDistance;
+	static	MObject		radius;
 	static	MObject		chainLength;
 	static	MObject		parentInverseMatrix;
 
-	static	MObject		outputTranslate;
-	static	MObject		outputTranslateX;
-	static	MObject		outputTranslateY;
-	static	MObject		outputTranslateZ;
+	static	MObject		outTranslate;
+	static	MObject		outTranslateX;
+	static	MObject		outTranslateY;
+	static	MObject		outTranslateZ;
+	static	MObject		outVector;
+	static	MObject		outVectorX;
+	static	MObject		outVectorY;
+	static	MObject		outVectorZ;
+	static	MObject		outMatrix;
+	static	MObject		outWorldMatrix;
 	static	MObject		softScale;
-	static	MObject		distance;
+	static	MObject		softDistance;
 
 	static	MString		inputCategory;
 	static	MString		outputCategory;
