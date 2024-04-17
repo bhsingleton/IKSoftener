@@ -1,4 +1,4 @@
-global proc AESoftIKTemplate(string $nodeName)
+global proc AEikSoftenerTemplate(string $nodeName)
 {
     
     editorTemplate -beginScrollLayout;
@@ -6,16 +6,17 @@ global proc AESoftIKTemplate(string $nodeName)
         editorTemplate -beginLayout "Soft-IK Attributes" -collapse false;
 			
 			editorTemplate -addControl "envelope";
-            editorTemplate -addControl "softDistance";
+            editorTemplate -addControl "radius";
             editorTemplate -addControl "chainLength";
         
         editorTemplate -endLayout;
         
 		editorTemplate -beginLayout "Output" -collapse false;
         
-            editorTemplate -addControl "outputTranslate";
+            editorTemplate -addControl "outTranslate";
+			editorTemplate -addControl "outVector";
             editorTemplate -addControl "softScale";
-			editorTemplate -addControl "distance";
+			editorTemplate -addControl "softDistance";
         
         editorTemplate -endLayout;
 		
