@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
-project(SoftIK)
+project(IKSoftener)
 include($ENV{DEVKIT_LOCATION}/cmake/pluginEntry.cmake)
 
 set(
 	SOURCE_FILES
 	"pluginMain.cpp"
-	"SoftIKNode.h"
-	"SoftIKNode.cpp"
+	"IKSoftenerNode.h"
+	"IKSoftenerNode.cpp"
 )
 
 set(
