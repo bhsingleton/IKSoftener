@@ -15,14 +15,22 @@ MObject		IKSoftener::radius;
 MObject		IKSoftener::chainLength;
 MObject		IKSoftener::parentInverseMatrix;
 
-MObject		IKSoftener::outTranslate;
-MObject		IKSoftener::outTranslateX;
-MObject		IKSoftener::outTranslateY;
-MObject		IKSoftener::outTranslateZ;
+MObject		IKSoftener::outPosition;
+MObject		IKSoftener::outPositionX;
+MObject		IKSoftener::outPositionY;
+MObject		IKSoftener::outPositionZ;
+MObject		IKSoftener::outWorldPosition;
+MObject		IKSoftener::outWorldPositionX;
+MObject		IKSoftener::outWorldPositionY;
+MObject		IKSoftener::outWorldPositionZ;
 MObject		IKSoftener::outVector;
 MObject		IKSoftener::outVectorX;
 MObject		IKSoftener::outVectorY;
 MObject		IKSoftener::outVectorZ;
+MObject		IKSoftener::outWorldVector;
+MObject		IKSoftener::outWorldVectorX;
+MObject		IKSoftener::outWorldVectorY;
+MObject		IKSoftener::outWorldVectorZ;
 MObject		IKSoftener::outMatrix;
 MObject		IKSoftener::outWorldMatrix;
 MObject		IKSoftener::softScale;
@@ -107,8 +115,8 @@ Only these values should be used when performing computations!
 		
 		// Calculate aim vector
 		//
-		MPoint startPoint = IKSoftener::matrixToPosition(startMatrix) * parentInverseMatrix;
-		MPoint endPoint = IKSoftener::matrixToPosition(endMatrix) * parentInverseMatrix;
+		MPoint startPoint = IKSoftener::matrixToPosition(startMatrix);
+		MPoint endPoint = IKSoftener::matrixToPosition(endMatrix);
 
 		MVector aimVector = MVector(endPoint - startPoint);
 		double distance = aimVector.length();
@@ -138,22 +146,31 @@ Only these values should be used when performing computations!
 		
 		// Calculate soft end point
 		//
-		MVector forwardVector = aimVector.normal();
-		MPoint softEndPoint = startPoint + (forwardVector * softDistance);
+		MVector worldVector = aimVector.normal();
+		MVector vector = worldVector * parentInverseMatrix;
 
-		MPoint point = (endPoint * (1.0 - envelope)) + (softEndPoint * envelope); // Lerp the two points using the envelope
+		MPoint softEndPoint = startPoint + (worldVector * softDistance);
+		MPoint worldPosition = (endPoint * (1.0 - envelope)) + (softEndPoint * envelope); // Lerp the two points using the envelope
+		MPoint position = worldPosition * parentInverseMatrix;
 
-		MMatrix matrix = IKSoftener::createPositionMatrix(point);
-		MMatrix worldMatrix = matrix * parentInverseMatrix.inverse();
+		MMatrix matrix = IKSoftener::createPositionMatrix(worldPosition);
+		MMatrix worldMatrix = IKSoftener::createPositionMatrix(position);
 
 		// Get output data handles
 		//
-		MDataHandle outTranslateHandle = data.outputValue(IKSoftener::outTranslate, &status);
+		MDataHandle outPositionHandle = data.outputValue(IKSoftener::outPosition, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle outTranslateXHandle = outTranslateHandle.child(IKSoftener::outTranslateX);
-		MDataHandle outTranslateYHandle = outTranslateHandle.child(IKSoftener::outTranslateY);
-		MDataHandle outTranslateZHandle = outTranslateHandle.child(IKSoftener::outTranslateZ);
+		MDataHandle outPositionXHandle = outPositionHandle.child(IKSoftener::outPositionX);
+		MDataHandle outPositionYHandle = outPositionHandle.child(IKSoftener::outPositionY);
+		MDataHandle outPositionZHandle = outPositionHandle.child(IKSoftener::outPositionZ);
+
+		MDataHandle outWorldPositionHandle = data.outputValue(IKSoftener::outWorldPosition, &status);
+		CHECK_MSTATUS_AND_RETURN_IT(status);
+
+		MDataHandle outWorldPositionXHandle = outWorldPositionHandle.child(IKSoftener::outWorldPositionX);
+		MDataHandle outWorldPositionYHandle = outWorldPositionHandle.child(IKSoftener::outWorldPositionY);
+		MDataHandle outWorldPositionZHandle = outWorldPositionHandle.child(IKSoftener::outWorldPositionZ);
 
 		MDataHandle outVectorHandle = data.outputValue(IKSoftener::outVector, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -161,6 +178,13 @@ Only these values should be used when performing computations!
 		MDataHandle outVectorXHandle = outVectorHandle.child(IKSoftener::outVectorX);
 		MDataHandle outVectorYHandle = outVectorHandle.child(IKSoftener::outVectorY);
 		MDataHandle outVectorZHandle = outVectorHandle.child(IKSoftener::outVectorZ);
+
+		MDataHandle outWorldVectorHandle = data.outputValue(IKSoftener::outWorldVector, &status);
+		CHECK_MSTATUS_AND_RETURN_IT(status);
+
+		MDataHandle outWorldVectorXHandle = outWorldVectorHandle.child(IKSoftener::outWorldVectorX);
+		MDataHandle outWorldVectorYHandle = outWorldVectorHandle.child(IKSoftener::outWorldVectorY);
+		MDataHandle outWorldVectorZHandle = outWorldVectorHandle.child(IKSoftener::outWorldVectorZ);
 
 		MDataHandle softScaleHandle = data.outputValue(IKSoftener::softScale, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -177,33 +201,38 @@ Only these values should be used when performing computations!
 		// Set output handle values
 		//
 		MDistance::Unit distanceUnit = MDistance::uiUnit();
-		outTranslateXHandle.setMDistance(MDistance(point.x, distanceUnit));
-		outTranslateYHandle.setMDistance(MDistance(point.y, distanceUnit));
-		outTranslateZHandle.setMDistance(MDistance(point.z, distanceUnit));
 
-		outTranslateXHandle.setClean();
-		outTranslateYHandle.setClean();
-		outTranslateZHandle.setClean();
+		outPositionXHandle.setMDistance(MDistance(position.x, distanceUnit));
+		outPositionYHandle.setMDistance(MDistance(position.y, distanceUnit));
+		outPositionZHandle.setMDistance(MDistance(position.z, distanceUnit));
+		outPositionHandle.setClean();
 
-		outVectorXHandle.setDouble(forwardVector.x);
-		outVectorYHandle.setDouble(forwardVector.y);
-		outVectorZHandle.setDouble(forwardVector.z);
+		outWorldPositionXHandle.setMDistance(MDistance(worldPosition.x, distanceUnit));
+		outWorldPositionYHandle.setMDistance(MDistance(worldPosition.y, distanceUnit));
+		outWorldPositionZHandle.setMDistance(MDistance(worldPosition.z, distanceUnit));
+		outWorldPositionHandle.setClean();
 
-		outVectorXHandle.setClean();
-		outVectorYHandle.setClean();
-		outVectorZHandle.setClean();
+		outVectorXHandle.setDouble(vector.x);
+		outVectorYHandle.setDouble(vector.y);
+		outVectorZHandle.setDouble(vector.z);
+		outVectorHandle.setClean();
 
-		softScaleHandle.setDouble(softScale);
-		softScaleHandle.setClean();
-
-		softDistanceHandle.setDouble(distance);
-		softDistanceHandle.setClean();
+		outWorldVectorXHandle.setDouble(worldVector.x);
+		outWorldVectorYHandle.setDouble(worldVector.y);
+		outWorldVectorZHandle.setDouble(worldVector.z);
+		outWorldVectorHandle.setClean();
 
 		outMatrixHandle.setMMatrix(matrix);
 		outMatrixHandle.setClean();
 
 		outWorldMatrixHandle.setMMatrix(worldMatrix);
 		outWorldMatrixHandle.setClean();
+
+		softDistanceHandle.setDouble(distance);
+		softDistanceHandle.setClean();
+
+		softScaleHandle.setDouble(softScale);
+		softScaleHandle.setClean();
 
 		// Mark plug as clean
 		//
@@ -343,36 +372,72 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
 	// Output attributes:
-	// ".outTranslateX" attribute
+	// ".outPositionX" attribute
 	//
-	IKSoftener::outTranslateX = fnUnitAttr.create("outTranslateX", "otx", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outPositionX = fnUnitAttr.create("outPositionX", "opx", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outTranslateY" attribute
+	// ".outPositionY" attribute
 	//
-	IKSoftener::outTranslateY = fnUnitAttr.create("outTranslateY", "oty", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outPositionY = fnUnitAttr.create("outPositionY", "opy", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outTranslateZ" attribute
+	// ".outPositionZ" attribute
 	//
-	IKSoftener::outTranslateZ = fnUnitAttr.create("outTranslateZ", "otz", MFnUnitAttribute::kDistance, 0.0, &status);
+	IKSoftener::outPositionZ = fnUnitAttr.create("outPositionZ", "opz", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outTranslate" attribute
+	// ".outPosition" attribute
 	//
-	IKSoftener::outTranslate = fnNumericAttr.create("outTranslate", "ot", IKSoftener::outTranslateX, IKSoftener::outTranslateY, IKSoftener::outTranslateZ, &status);
+	IKSoftener::outPosition = fnNumericAttr.create("outPosition", "op", IKSoftener::outPositionX, IKSoftener::outPositionY, IKSoftener::outPositionZ, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldPositionX" attribute
+	//
+	IKSoftener::outWorldPositionX = fnUnitAttr.create("outWorldPositionX", "owpx", MFnUnitAttribute::kDistance, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
+	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldPositionY" attribute
+	//
+	IKSoftener::outWorldPositionY = fnUnitAttr.create("outWorldPositionY", "owpy", MFnUnitAttribute::kDistance, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
+	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldPositionZ" attribute
+	//
+	IKSoftener::outWorldPositionZ = fnUnitAttr.create("outWorldPositionZ", "owpz", MFnUnitAttribute::kDistance, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnUnitAttr.setWritable(false));
+	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
+	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldPosition" attribute
+	//
+	IKSoftener::outWorldPosition = fnNumericAttr.create("outWorldPosition", "owp", IKSoftener::outWorldPositionX, IKSoftener::outWorldPositionY, IKSoftener::outWorldPositionZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
@@ -409,6 +474,42 @@ Use this function to define any static attributes.
 	// ".outVector" attribute
 	//
 	IKSoftener::outVector = fnNumericAttr.create("outVector", "ov", IKSoftener::outVectorX, IKSoftener::outVectorY, IKSoftener::outVectorZ, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldVectorX" attribute
+	//
+	IKSoftener::outWorldVectorX = fnNumericAttr.create("outWorldVectorX", "owvx", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldVectorY" attribute
+	//
+	IKSoftener::outWorldVectorY = fnNumericAttr.create("outWorldVectorY", "owvy", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldVectorZ" attribute
+	//
+	IKSoftener::outWorldVectorZ = fnNumericAttr.create("outWorldVectorZ", "owvz", MFnNumericData::kDouble, 0.0, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
+	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
+
+	// ".outWorldVector" attribute
+	//
+	IKSoftener::outWorldVector = fnNumericAttr.create("outWorldVector", "owv", IKSoftener::outWorldVectorX, IKSoftener::outWorldVectorY, IKSoftener::outWorldVectorZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnNumericAttr.setWritable(false));
@@ -460,8 +561,10 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::chainLength));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::parentInverseMatrix));
 
-	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outTranslate));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outPosition));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outWorldPosition));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outVector));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outWorldVector));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outMatrix));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outWorldMatrix));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::softScale));
@@ -469,7 +572,7 @@ Use this function to define any static attributes.
 
 	// Define attribute relationships
 	//
-	MObject attributes[6] = { IKSoftener::outTranslate , IKSoftener::outVector , IKSoftener::outMatrix , IKSoftener::outWorldMatrix , IKSoftener::softDistance , IKSoftener::softScale };
+	MObject attributes[8] = { IKSoftener::outPosition, IKSoftener::outWorldPosition, IKSoftener::outVector, IKSoftener::outWorldVector, IKSoftener::outMatrix, IKSoftener::outWorldMatrix, IKSoftener::softDistance, IKSoftener::softScale };
 	
 	for (MObject attribute : attributes)
 	{

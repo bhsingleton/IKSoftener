@@ -56,14 +56,22 @@ public:
 	static	MObject		chainLength;
 	static	MObject		parentInverseMatrix;
 
-	static	MObject		outTranslate;
-	static	MObject		outTranslateX;
-	static	MObject		outTranslateY;
-	static	MObject		outTranslateZ;
+	static	MObject		outPosition;
+	static	MObject		outPositionX;
+	static	MObject		outPositionY;
+	static	MObject		outPositionZ;
+	static	MObject		outWorldPosition;
+	static	MObject		outWorldPositionX;
+	static	MObject		outWorldPositionY;
+	static	MObject		outWorldPositionZ;
 	static	MObject		outVector;
 	static	MObject		outVectorX;
 	static	MObject		outVectorY;
 	static	MObject		outVectorZ;
+	static	MObject		outWorldVector;
+	static	MObject		outWorldVectorX;
+	static	MObject		outWorldVectorY;
+	static	MObject		outWorldVectorZ;
 	static	MObject		outMatrix;
 	static	MObject		outWorldMatrix;
 	static	MObject		softScale;
