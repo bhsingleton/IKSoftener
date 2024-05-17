@@ -5,7 +5,6 @@
 //
 
 #include "IKSoftenerNode.h"
-
 #include <maya/MFnPlugin.h>
 
 

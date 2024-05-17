@@ -1,7 +1,7 @@
 //
-// File: SoftIKNode.cpp
+// File: IKSoftenerNode.cpp
 //
-// Dependency Graph Node: softIK
+// Dependency Graph Node: ikSoftener
 //
 // Author: Benjamin H. Singleton
 //
@@ -13,6 +13,7 @@ MObject		IKSoftener::startMatrix;
 MObject		IKSoftener::endMatrix;
 MObject		IKSoftener::radius;
 MObject		IKSoftener::chainLength;
+MObject		IKSoftener::chainScaleCompensate;
 MObject		IKSoftener::parentInverseMatrix;
 
 MObject		IKSoftener::outPosition;
@@ -40,6 +41,22 @@ MString		IKSoftener::inputCategory("Input");
 MString		IKSoftener::outputCategory("Output");
 
 MTypeId		IKSoftener::id(0x0013b1c4);
+
+
+template<class N> N lerp(const N start, const N end, const double weight)
+/**
+Linearly interpolates the two given numbers using the supplied weight.
+
+@param start: The start number.
+@param end: The end number.
+@param weight: The amount to blend.
+@return: The interpolated value.
+*/
+{
+
+	return (start * (1.0 - weight)) + (end * weight);
+
+};
 
 
 IKSoftener::IKSoftener() {}
@@ -92,9 +109,12 @@ Only these values should be used when performing computations!
 		MDataHandle chainLengthHandle = data.inputValue(IKSoftener::chainLength, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
-		MDataHandle parentInverseMatrixHandle = data.inputValue(IKSoftener::parentInverseMatrix, &status);
+		MDataHandle chainScaleCompensateHandle = data.inputValue(IKSoftener::chainScaleCompensate, &status);
 		CHECK_MSTATUS_AND_RETURN_IT(status);
 
+		MDataHandle parentInverseMatrixHandle = data.inputValue(IKSoftener::parentInverseMatrix, &status);
+		CHECK_MSTATUS_AND_RETURN_IT(status);
+		
 		// Get values from handles
 		//
 		double envelope = envelopeHandle.asDouble();
@@ -104,15 +124,19 @@ Only these values should be used when performing computations!
 		MMatrix parentInverseMatrix = parentInverseMatrixHandle.asMatrix();
 
 		double radius = std::fabs(radiusHandle.asDouble());
-		double chainLength = std::fabs(chainLengthHandle.asDouble());
+		double clampedRadius = (radius == 0.0) ? DBL_MIN : radius;
 		
-		if (radius == 0.0)
+		double chainLength = chainLengthHandle.asDouble();
+		bool chainScaleCompensate = chainScaleCompensateHandle.asBool();
+
+		if (chainScaleCompensate)
 		{
 
-			radius = DBL_MIN;
+			MVector scale = IKSoftener::matrixToScale(startMatrix);
+			chainLength *= scale.x;  // Most IK chains rely on x-forward so I'm leaving it as this for now.
 
 		}
-		
+
 		// Calculate aim vector
 		//
 		MPoint startPoint = IKSoftener::matrixToPosition(startMatrix);
@@ -124,9 +148,7 @@ Only these values should be used when performing computations!
 		//Calculate soft distance
 		// http://www.softimageblog.com/archives/108
 		//
-		const double a = (chainLength - radius);
-		const double e = std::exp(1.0);
-
+		const double a = (chainLength - clampedRadius);
 		double softDistance = 0.0;
 
 		if (0.0 <= distance && distance < a) 
@@ -137,7 +159,7 @@ Only these values should be used when performing computations!
 		} else if (a <= distance) 
 		{
 				
-			softDistance = ((radius * (1.0 - std::pow(e, (-(distance - a) / radius)))) + a);
+			softDistance = ((clampedRadius * (1.0 - std::pow(M_E, (-(distance - a) / clampedRadius)))) + a);
 
 		}
 		else;
@@ -150,7 +172,7 @@ Only these values should be used when performing computations!
 		MVector vector = worldVector * parentInverseMatrix;
 
 		MPoint softEndPoint = startPoint + (worldVector * softDistance);
-		MPoint worldPosition = (endPoint * (1.0 - envelope)) + (softEndPoint * envelope); // Lerp the two points using the envelope
+		MPoint worldPosition = lerp(endPoint, softEndPoint, envelope);  // Lerp the two points using envelope
 		MPoint position = worldPosition * parentInverseMatrix;
 
 		MMatrix matrix = IKSoftener::createPositionMatrix(worldPosition);
@@ -287,12 +309,30 @@ Extracts the position component from the supplied transform matrix.
 };
 
 
+MVector IKSoftener::matrixToScale(const MMatrix& matrix)
+/**
+Extracts the scale component from the supplied transform matrix.
+
+@param matrix: The transform matrix to extract from.
+@return: The scale value.
+*/
+{
+
+	MVector xAxis = MVector(matrix[0]);
+	MVector yAxis = MVector(matrix[1]);
+	MVector zAxis = MVector(matrix[2]);
+
+	return MVector(xAxis.length(), yAxis.length(), zAxis.length());
+
+};
+
+
 void* IKSoftener::creator() 
 /**
 This function is called by Maya when a new instance is requested.
 See pluginMain.cpp for details.
 
-@return: SoftIK
+@return: IKSoftener
 */
 {
 
@@ -320,7 +360,7 @@ Use this function to define any static attributes.
 	MFnCompoundAttribute fnCompoundAttr;
 
 	// Input attributes:
-	// ".envelope" attribute
+	// Initialize `envelope` attribute
 	//
 	IKSoftener::envelope = fnNumericAttr.create("envelope", "env", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -332,21 +372,21 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".startMatrix" attribute
+	// Initialize `startMatrix` attribute
 	//
 	IKSoftener::startMatrix = fnMatrixAttr.create("startMatrix", "sm", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".endMatrix" attribute
+	// Initialize `endMatrix` attribute
 	//
 	IKSoftener::endMatrix = fnMatrixAttr.create("endMatrix", "em", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".radius" attribute
+	// Initialize `radius` attribute
 	//
 	IKSoftener::radius = fnNumericAttr.create("radius", "rad", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -355,7 +395,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".chainLength" attribute
+	// Initialize `chainLength` attribute
 	//
 	IKSoftener::chainLength = fnNumericAttr.create("chainLength", "cl", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -364,7 +404,14 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setKeyable(true));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
 
-	// ".parentInverseMatrix" attribute
+	// Initialize `chainScaleCompensate` attribute
+	//
+	IKSoftener::chainScaleCompensate = fnNumericAttr.create("chainScaleCompensate", "csc", MFnNumericData::kBoolean, false, &status);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::inputCategory));
+
+	// Initialize `parentInverseMatrix` attribute
 	//
 	IKSoftener::parentInverseMatrix = fnMatrixAttr.create("parentInverseMatrix", "pim", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -372,7 +419,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::inputCategory));
 
 	// Output attributes:
-	// ".outPositionX" attribute
+	// Initialize `outPositionX` attribute
 	//
 	IKSoftener::outPositionX = fnUnitAttr.create("outPositionX", "opx", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -381,7 +428,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outPositionY" attribute
+	// Initialize `outPositionY` attribute
 	//
 	IKSoftener::outPositionY = fnUnitAttr.create("outPositionY", "opy", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -390,7 +437,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outPositionZ" attribute
+	// Initialize `outPositionZ` attribute
 	//
 	IKSoftener::outPositionZ = fnUnitAttr.create("outPositionZ", "opz", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -399,7 +446,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outPosition" attribute
+	// Initialize `outPosition` attribute
 	//
 	IKSoftener::outPosition = fnNumericAttr.create("outPosition", "op", IKSoftener::outPositionX, IKSoftener::outPositionY, IKSoftener::outPositionZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -408,7 +455,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldPositionX" attribute
+	// Initialize `outWorldPositionX` attribute
 	//
 	IKSoftener::outWorldPositionX = fnUnitAttr.create("outWorldPositionX", "owpx", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -417,7 +464,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldPositionY" attribute
+	// Initialize `outWorldPositionY` attribute
 	//
 	IKSoftener::outWorldPositionY = fnUnitAttr.create("outWorldPositionY", "owpy", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -426,7 +473,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldPositionZ" attribute
+	// Initialize `outWorldPositionZ` attribute
 	//
 	IKSoftener::outWorldPositionZ = fnUnitAttr.create("outWorldPositionZ", "owpz", MFnUnitAttribute::kDistance, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -435,7 +482,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnUnitAttr.setStorable(false));
 	CHECK_MSTATUS(fnUnitAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldPosition" attribute
+	// Initialize `outWorldPosition` attribute
 	//
 	IKSoftener::outWorldPosition = fnNumericAttr.create("outWorldPosition", "owp", IKSoftener::outWorldPositionX, IKSoftener::outWorldPositionY, IKSoftener::outWorldPositionZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -444,7 +491,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outVectorX" attribute
+	// Initialize `outVectorX` attribute
 	//
 	IKSoftener::outVectorX = fnNumericAttr.create("outVectorX", "ovx", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -453,7 +500,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outVectorY" attribute
+	// Initialize `outVectorY` attribute
 	//
 	IKSoftener::outVectorY = fnNumericAttr.create("outVectorY", "ovy", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -462,7 +509,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outVectorZ" attribute
+	// Initialize `outVectorZ` attribute
 	//
 	IKSoftener::outVectorZ = fnNumericAttr.create("outVectorZ", "ovz", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -471,7 +518,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outVector" attribute
+	// Initialize `outVector` attribute
 	//
 	IKSoftener::outVector = fnNumericAttr.create("outVector", "ov", IKSoftener::outVectorX, IKSoftener::outVectorY, IKSoftener::outVectorZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -480,7 +527,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldVectorX" attribute
+	// Initialize `outWorldVectorX` attribute
 	//
 	IKSoftener::outWorldVectorX = fnNumericAttr.create("outWorldVectorX", "owvx", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -489,7 +536,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldVectorY" attribute
+	// Initialize `outWorldVectorY` attribute
 	//
 	IKSoftener::outWorldVectorY = fnNumericAttr.create("outWorldVectorY", "owvy", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -498,7 +545,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldVectorZ" attribute
+	// Initialize `outWorldVectorZ` attribute
 	//
 	IKSoftener::outWorldVectorZ = fnNumericAttr.create("outWorldVectorZ", "owvz", MFnNumericData::kDouble, 0.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -507,7 +554,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldVector" attribute
+	// Initialize `outWorldVector` attribute
 	//
 	IKSoftener::outWorldVector = fnNumericAttr.create("outWorldVector", "owv", IKSoftener::outWorldVectorX, IKSoftener::outWorldVectorY, IKSoftener::outWorldVectorZ, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -516,7 +563,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outMatrix" attribute
+	// Initialize `outMatrix` attribute
 	//
 	IKSoftener::outMatrix = fnMatrixAttr.create("outMatrix", "om", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -525,7 +572,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnMatrixAttr.setStorable(false));
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".outWorldMatrix" attribute
+	// Initialize `outWorldMatrix` attribute
 	//
 	IKSoftener::outWorldMatrix = fnMatrixAttr.create("outWorldMatrix", "owm", MFnMatrixAttribute::kDouble, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -534,7 +581,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnMatrixAttr.setStorable(false));
 	CHECK_MSTATUS(fnMatrixAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".softScale" attribute
+	// Initialize `softScale` attribute
 	//
 	IKSoftener::softScale = fnNumericAttr.create("softScale", "ss", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -543,7 +590,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(fnNumericAttr.setStorable(false));
 	CHECK_MSTATUS(fnNumericAttr.addToCategory(IKSoftener::outputCategory));
 
-	// ".distance" attribute
+	// Initialize `distance` attribute
 	//
 	IKSoftener::softDistance = fnNumericAttr.create("softDistance", "sd", MFnNumericData::kDouble, 1.0, &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -559,6 +606,7 @@ Use this function to define any static attributes.
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::endMatrix));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::radius));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::chainLength));
+	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::chainScaleCompensate));
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::parentInverseMatrix));
 
 	CHECK_MSTATUS(IKSoftener::addAttribute(IKSoftener::outPosition));
@@ -582,6 +630,7 @@ Use this function to define any static attributes.
 		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::endMatrix, attribute));
 		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::radius, attribute));
 		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::chainLength, attribute));
+		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::chainScaleCompensate, attribute));
 		CHECK_MSTATUS(IKSoftener::attributeAffects(IKSoftener::parentInverseMatrix, attribute));
 
 	}

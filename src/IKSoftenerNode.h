@@ -43,6 +43,7 @@ public:
 
 	static	MMatrix		createPositionMatrix(const MPoint& position);
 	static	MPoint		matrixToPosition(const MMatrix& matrix);
+	static	MVector		matrixToScale(const MMatrix& matrix);
 
 	static  void*		creator();
 	static  MStatus		initialize();
@@ -54,6 +55,7 @@ public:
 	static	MObject		endMatrix;
 	static	MObject		radius;
 	static	MObject		chainLength;
+	static	MObject		chainScaleCompensate;
 	static	MObject		parentInverseMatrix;
 
 	static	MObject		outPosition;
