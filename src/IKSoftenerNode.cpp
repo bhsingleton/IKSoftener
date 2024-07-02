@@ -123,8 +123,9 @@ Only these values should be used when performing computations!
 		MMatrix endMatrix = endMatrixHandle.asMatrix();
 		MMatrix parentInverseMatrix = parentInverseMatrixHandle.asMatrix();
 
-		double radius = std::fabs(radiusHandle.asDouble());
-		double clampedRadius = (radius == 0.0) ? DBL_MIN : radius;
+		double radius = radiusHandle.asDouble();
+		double absoluteRadius = std::fabs(radius);
+		double clampedRadius = (absoluteRadius > 0.0) ? radius : DBL_MIN;
 		
 		double chainLength = chainLengthHandle.asDouble();
 		bool chainScaleCompensate = chainScaleCompensateHandle.asBool();
@@ -270,6 +271,19 @@ Only these values should be used when performing computations!
 		return MS::kUnknownParameter;
 
 	}
+
+};
+
+
+MPxNode::SchedulingType IKSoftener::schedulingType() const
+/**
+When overridden this method controls the degree of parallelism supported by the node during threaded evaluation.
+
+@return: The scheduling type to be used for this node.
+*/
+{
+
+	return MPxNode::SchedulingType::kParallel;
 
 };
 
