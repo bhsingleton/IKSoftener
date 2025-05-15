@@ -43,9 +43,7 @@ public:
 
 	virtual	MPxNode::SchedulingType		schedulingType() const;
 
-	static	MMatrix						createPositionMatrix(const MPoint& position);
-	static	MPoint						matrixToPosition(const MMatrix& matrix);
-	static	MVector						matrixToScale(const MMatrix& matrix);
+	static	void						solve(const MPoint& origin, const MPoint& goal, const double chainLength, const double radius, MPoint& softGoal, MVector& softVector, double& softDistance, double& softScale);
 
 	static  void*						creator();
 	static  MStatus						initialize();

@@ -7,6 +7,8 @@ set(
 	"pluginMain.cpp"
 	"IKSoftenerNode.h"
 	"IKSoftenerNode.cpp"
+	"IKEmulatorNode.h"
+	"IKEmulatorNode.cpp"
 )
 
 set(

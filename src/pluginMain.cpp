@@ -5,6 +5,7 @@
 //
 
 #include "IKSoftenerNode.h"
+#include "IKEmulatorNode.h"
 #include <maya/MFnPlugin.h>
 
 
@@ -17,6 +18,16 @@ MStatus initializePlugin(MObject obj)
 	status = plugin.registerNode("ikSoftener", IKSoftener::id, IKSoftener::creator, IKSoftener::initialize);
 	
 	if (!status) 
+	{
+
+		status.perror("registerNode");
+		return status;
+
+	}
+
+	status = plugin.registerNode("ikEmulator", IKEmulator::id, IKEmulator::creator, IKEmulator::initialize);
+
+	if (!status)
 	{
 
 		status.perror("registerNode");
@@ -37,6 +48,16 @@ MStatus uninitializePlugin(MObject obj)
 	status = plugin.deregisterNode(IKSoftener::id);
 
 	if (!status) 
+	{
+
+		status.perror("deregisterNode");
+		return status;
+
+	}
+
+	status = plugin.deregisterNode(IKEmulator::id);
+
+	if (!status)
 	{
 
 		status.perror("deregisterNode");

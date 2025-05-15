@@ -7,6 +7,7 @@
 //
 
 #include "IKSoftenerNode.h"
+#include "IKEmulatorNode.h"
 
 MObject		IKSoftener::envelope;
 MObject		IKSoftener::startMatrix;
@@ -124,60 +125,38 @@ Only these values should be used when performing computations!
 		MMatrix parentInverseMatrix = parentInverseMatrixHandle.asMatrix();
 
 		double radius = radiusHandle.asDouble();
-		double absoluteRadius = std::fabs(radius);
-		double clampedRadius = (absoluteRadius > 0.0) ? radius : DBL_MIN;
-		
 		double chainLength = chainLengthHandle.asDouble();
 		bool chainScaleCompensate = chainScaleCompensateHandle.asBool();
 
 		if (chainScaleCompensate)
 		{
 
-			MVector scale = IKSoftener::matrixToScale(startMatrix);
+			MVector scale = IKEmulator::matrixToScale(startMatrix);
 			chainLength *= scale.x;  // Most IK chains rely on x-forward so I'm leaving it as this for now.
 
 		}
 
-		// Calculate aim vector
+		// Solve soft IK
 		//
-		MPoint startPoint = IKSoftener::matrixToPosition(startMatrix);
-		MPoint endPoint = IKSoftener::matrixToPosition(endMatrix);
+		MPoint origin = IKEmulator::matrixToPosition(startMatrix);
+		MPoint goal = IKEmulator::matrixToPosition(endMatrix);
 
-		MVector aimVector = MVector(endPoint - startPoint);
-		double distance = aimVector.length();
+		MPoint softGoal;
+		MVector softVector;
+		double softDistance, softScale;
 
-		//Calculate soft distance
-		// http://www.softimageblog.com/archives/108
+		IKSoftener::solve(origin, goal, chainLength, radius, softGoal, softVector, softDistance, softScale);
+
+		// Convert solution to local space
 		//
-		const double a = (chainLength - clampedRadius);
-		double softDistance = 0.0;
+		MPoint outWorldPosition = lerp(goal, softGoal, envelope);  // Lerp the two points using envelope
+		MPoint outPosition = outWorldPosition * parentInverseMatrix;
 
-		if (0.0 <= distance && distance < a) 
-		{
+		MVector outVector = softVector;
+		MVector outWorldVector = outVector * parentInverseMatrix;
 
-			softDistance = distance;
-
-		} else if (a <= distance) 
-		{
-				
-			softDistance = ((clampedRadius * (1.0 - std::pow(M_E, (-(distance - a) / clampedRadius)))) + a);
-
-		}
-		else;
-
-		double softScale = (softDistance > 0.0) ? (distance / softDistance) : 0.0;
-		
-		// Calculate soft end point
-		//
-		MVector worldVector = aimVector.normal();
-		MVector vector = worldVector * parentInverseMatrix;
-
-		MPoint softEndPoint = startPoint + (worldVector * softDistance);
-		MPoint worldPosition = lerp(endPoint, softEndPoint, envelope);  // Lerp the two points using envelope
-		MPoint position = worldPosition * parentInverseMatrix;
-
-		MMatrix matrix = IKSoftener::createPositionMatrix(worldPosition);
-		MMatrix worldMatrix = IKSoftener::createPositionMatrix(position);
+		MMatrix outMatrix = IKEmulator::createPositionMatrix(outWorldPosition);
+		MMatrix outWorldMatrix = IKEmulator::createPositionMatrix(outPosition);
 
 		// Get output data handles
 		//
@@ -225,33 +204,33 @@ Only these values should be used when performing computations!
 		//
 		MDistance::Unit distanceUnit = MDistance::uiUnit();
 
-		outPositionXHandle.setMDistance(MDistance(position.x, distanceUnit));
-		outPositionYHandle.setMDistance(MDistance(position.y, distanceUnit));
-		outPositionZHandle.setMDistance(MDistance(position.z, distanceUnit));
+		outPositionXHandle.setMDistance(MDistance(outPosition.x, distanceUnit));
+		outPositionYHandle.setMDistance(MDistance(outPosition.y, distanceUnit));
+		outPositionZHandle.setMDistance(MDistance(outPosition.z, distanceUnit));
 		outPositionHandle.setClean();
 
-		outWorldPositionXHandle.setMDistance(MDistance(worldPosition.x, distanceUnit));
-		outWorldPositionYHandle.setMDistance(MDistance(worldPosition.y, distanceUnit));
-		outWorldPositionZHandle.setMDistance(MDistance(worldPosition.z, distanceUnit));
+		outWorldPositionXHandle.setMDistance(MDistance(outWorldPosition.x, distanceUnit));
+		outWorldPositionYHandle.setMDistance(MDistance(outWorldPosition.y, distanceUnit));
+		outWorldPositionZHandle.setMDistance(MDistance(outWorldPosition.z, distanceUnit));
 		outWorldPositionHandle.setClean();
 
-		outVectorXHandle.setDouble(vector.x);
-		outVectorYHandle.setDouble(vector.y);
-		outVectorZHandle.setDouble(vector.z);
+		outVectorXHandle.setDouble(outVector.x);
+		outVectorYHandle.setDouble(outVector.y);
+		outVectorZHandle.setDouble(outVector.z);
 		outVectorHandle.setClean();
 
-		outWorldVectorXHandle.setDouble(worldVector.x);
-		outWorldVectorYHandle.setDouble(worldVector.y);
-		outWorldVectorZHandle.setDouble(worldVector.z);
+		outWorldVectorXHandle.setDouble(outWorldVector.x);
+		outWorldVectorYHandle.setDouble(outWorldVector.y);
+		outWorldVectorZHandle.setDouble(outWorldVector.z);
 		outWorldVectorHandle.setClean();
 
-		outMatrixHandle.setMMatrix(matrix);
+		outMatrixHandle.setMMatrix(outMatrix);
 		outMatrixHandle.setClean();
 
-		outWorldMatrixHandle.setMMatrix(worldMatrix);
+		outWorldMatrixHandle.setMMatrix(outWorldMatrix);
 		outWorldMatrixHandle.setClean();
 
-		softDistanceHandle.setDouble(distance);
+		softDistanceHandle.setDouble(softDistance);
 		softDistanceHandle.setClean();
 
 		softScaleHandle.setDouble(softScale);
@@ -288,55 +267,50 @@ When overridden this method controls the degree of parallelism supported by the 
 };
 
 
-MMatrix IKSoftener::createPositionMatrix(const MPoint& position)
+void IKSoftener::solve(const MPoint& origin, const MPoint& goal, const double chainLength, const double radius, MPoint& softGoal, MVector& softVector, double& softDistance, double& softScale)
 /**
-Returns a position matrix from the supplied vector.
+Solves for the soft IK position based on the supplied parameters.
+See the following for details: http://www.softimageblog.com/archives/108
 
-@param position: The vector to convert.
-@return: The new position matrix.
+@param origin: The start position of the IK chain.
+@param chainLength: The total length of the IK chain.
+@param goal: The end goal of the IK chain.
+@param radius: The softening radius relative from the goal.
+@return: Void.
 */
 {
 
-	double rows[4][4] = {
-	{ 1.0, 0.0, 0.0, 0.0 },
-	{ 0.0, 1.0, 0.0, 0.0 },
-	{ 0.0, 0.0, 1.0, 0.0 },
-	{ position.x, position.y, position.z, 1.0 },
-	};
+	// Calculate soft distance and scale
+	// 
+	MVector aimVector = goal - origin;
+	double distance = aimVector.length();
 
-	return MMatrix(rows);
+	double absoluteRadius = std::fabs(radius);
+	double clampedRadius = (absoluteRadius > 0.0) ? radius : DBL_MIN;
+	const double a = (chainLength - clampedRadius);
 
-};
+	softDistance = 0.0;
 
+	if (0.0 <= distance && distance < a)
+	{
 
-MPoint IKSoftener::matrixToPosition(const MMatrix& matrix)
-/**
-Extracts the position component from the supplied transform matrix.
+		softDistance = distance;
 
-@param matrix: The transform matrix to extract from.
-@return: The position value.
-*/
-{
+	}
+	else if (a <= distance)
+	{
 
-	return MPoint(matrix[3]);
+		softDistance = ((clampedRadius * (1.0 - std::pow(M_E, (-(distance - a) / clampedRadius)))) + a);
 
-};
+	}
+	else;
 
+	softScale = (softDistance > 0.0) ? (distance / softDistance) : 0.0;
 
-MVector IKSoftener::matrixToScale(const MMatrix& matrix)
-/**
-Extracts the scale component from the supplied transform matrix.
-
-@param matrix: The transform matrix to extract from.
-@return: The scale value.
-*/
-{
-
-	MVector xAxis = MVector(matrix[0]);
-	MVector yAxis = MVector(matrix[1]);
-	MVector zAxis = MVector(matrix[2]);
-
-	return MVector(xAxis.length(), yAxis.length(), zAxis.length());
+	// Calculate soft goal
+	//
+	softVector = aimVector.normal();
+	softGoal = origin + (softVector * softDistance);
 
 };
 
